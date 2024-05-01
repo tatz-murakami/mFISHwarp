@@ -127,7 +127,9 @@ def chunk_wise_registration(chunk_position, displacement_overlap, fix_overlap, m
 
     chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_overlap)[:-1]
     fix = fix_overlap[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
+    target_shape = fix.shape
     disp = displacement_overlap[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
+    disp = mFISHwarp.transform.pad_trim_array_to_size(disp, target_shape+(len(target_shape),), mode='edge')
 
     mov = mFISHwarp.transform.transform_block_gpu(disp, mov_l)
 
@@ -137,11 +139,14 @@ def chunk_wise_registration(chunk_position, displacement_overlap, fix_overlap, m
 
     # save deformed moving image
     if registered_mov_zarr is not None:
-        shape = registered_mov_zarr.chunks
-        crop = (np.asarray(mov_deformed_overlap.shape) - np.asarray(registered_mov_zarr.chunks)) // 2
+        # shape = registered_mov_zarr.chunks
+        chunks = da.from_zarr(registered_mov_zarr).chunks
+        shape = [i[j] for i, j in zip(chunks, chunk_position)]
+        crop = (np.asarray(mov_deformed_overlap.shape) - np.asarray(shape)) // 2 
         slicing1 = tuple(slice(i, i + j) for i, j in zip(crop, shape))
         mov_deformed = mov_deformed_overlap[slicing1].astype(np.uint16)
-        slicing2 = tuple(slice(i * j, i * (j + 1)) for i, j in zip(shape, chunk_position))
+        
+        slicing2 = mFISHwarp.utils.obtain_chunk_slicer(chunks, chunk_position)
         registered_mov_zarr[slicing2] = mov_deformed
 
     # convert relative displacement to positional displacement
@@ -151,12 +156,12 @@ def chunk_wise_registration(chunk_position, displacement_overlap, fix_overlap, m
 
     # save dispalcement to zarr
     if displacement_zarr is not None:
-        shape = displacement_zarr.chunks
-        slicing = tuple(slice(i * j, i * (j + 1)) for i, j in zip(shape, chunk_position)) + (slice(None, None, None),)
+        chunks = da.from_zarr(displacement_zarr).chunks
+        slicing = mFISHwarp.utils.obtain_chunk_slicer(chunks,chunk_position) + (slice(None, None, None),)
         displacement_zarr[slicing] = merged_displacement
 
 
-def chunk_wise_no_registration(chunk_position, displacement_overlap, displacement_zarr, registered_mov_zarr):
+def chunk_wise_no_registration(chunk_position, displacement_overlap, fix_overlap, displacement_zarr, registered_mov_zarr):
     """
     Arugments:
         chunk_position (tuple): the index of chunk
@@ -166,23 +171,23 @@ def chunk_wise_no_registration(chunk_position, displacement_overlap, displacemen
     """
 
     chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_overlap)[:-1]
+    target_shape = fix_overlap[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].shape
 
     disp = displacement_overlap[
         mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)
     ].compute()
+    
+    disp = mFISHwarp.transform.pad_trim_array_to_size(disp, target_shape+(len(target_shape),), mode='edge')
 
-    # save deformed moving image
+    # save deformed moving image. Zero array.
     if registered_mov_zarr is not None:
-        shape = registered_mov_zarr.chunks
-        mov_deformed = np.zeros(registered_mov_zarr.chunks, dtype=np.uint16)
-        slicing = tuple(slice(i * j, i * (j + 1)) for i, j in zip(shape, chunk_position))
+        chunks = da.from_zarr(registered_mov_zarr).chunks
+        slicing = mFISHwarp.utils.obtain_chunk_slicer(chunks,chunk_position)
+        mov_deformed = np.zeros([i[j] for i,j in zip(chunks,chunk_position)], dtype=np.uint16)
         registered_mov_zarr[slicing] = mov_deformed
-
-    # trim edges
-    merged_displacement = disp
 
     # save dispalcement to zarr
     if displacement_zarr is not None:
-        shape = displacement_zarr.chunks
-        slicing = tuple(slice(i * j, i * (j + 1)) for i, j in zip(shape, chunk_position)) + (slice(None, None, None),)
-        displacement_zarr[slicing] = merged_displacement
+        chunks = da.from_zarr(displacement_zarr).chunks
+        slicing = mFISHwarp.utils.obtain_chunk_slicer(chunks,chunk_position) + (slice(None, None, None),)
+        displacement_zarr[slicing] = disp

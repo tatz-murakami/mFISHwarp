@@ -72,3 +72,14 @@ def get_trimming_range(overlap_size, target_size, trim_ratio):
     trimmed_sizes = tuple(trimmed_sizes)
 
     return trimming_ranges, trimmed_sizes
+
+
+def obtain_chunk_slicer(chunks, chunk_position):
+    """
+    Assume chunks to be the da.chunks format. Not zarr.chunks
+    """
+    slicer_list = []
+    for i, k in enumerate(chunk_position):
+        accum_sum = int(np.asarray(chunks[i][:k]).sum())
+        slicer_list.append(slice(accum_sum,accum_sum+chunks[i][k],None))
+    return tuple(slicer_list)

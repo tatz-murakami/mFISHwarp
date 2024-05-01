@@ -326,3 +326,50 @@ def composite_displacement_gpu(disp1, disp2, order=1):
 
     return merged_disp
 
+
+def trim_array_to_size(arr, size):
+    """
+    This function only trim and does not pad.
+    """
+    if len(arr.shape) != len(size):
+        raise ValueError('the dimension of target shape and array should be the same.')
+    
+    slice_list = []
+    for i in range(len(arr.shape)):
+        if arr.shape[i] > size[i]:
+            slice_list.append(slice(0,size[i]))
+        else:
+            slice_list.append(slice(0,None))
+    resized_array = arr[tuple(slice_list)]
+    return resized_array
+
+def pad_array_to_size(arr, size, *args, **kwargs):
+    """
+    This function only pad and does not trim. This function works with dask
+    """
+    if len(arr.shape) != len(size):
+        raise ValueError('the dimension of target shape and array should be the same.')
+        
+    for i in range(len(arr.shape)):
+        if arr.shape[i] < size[i]:
+            pad_width = size[i] - arr.shape[i]
+            pad_list = [[0,0] for i in range(len(arr.shape))]
+            pad_list[i][1] = pad_width
+            if isinstance(arr, np.ndarray):
+                arr = np.pad(arr, pad_list, *args, **kwargs)
+            elif isinstance(arr, da.Array):
+                arr = da.pad(arr, pad_list, *args, **kwargs)
+    return arr
+
+def pad_trim_array_to_size(arr, target_shape, *args, **kwargs):
+    """
+    This function pads and trims the array to target shape.
+    args, kwargs: parameters for padding. (mode='constant', constant_values=0) for zero padding, 
+    """
+    if len(arr.shape) != len(target_shape):
+        raise ValueError('the dimension of target shape and array should be the same.')
+        
+    arr = trim_array_to_size(arr,target_shape)
+    arr = pad_array_to_size(arr,target_shape, *args, **kwargs)
+    
+    return arr
