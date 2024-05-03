@@ -62,6 +62,47 @@ def transform_block(displacement, mov, order=1):
     return mov_block
 
 
+def transform_block_gpu(displacement, mov, order=1, size_limit=1024*1024*1024):
+    """
+    displacement: ndarray
+    mov: ndarray
+    """
+    if not isinstance(displacement, np.ndarray):
+        displacement = np.asarray(displacement)
+
+    displacement = cp.array(displacement)
+    # get moving data block coordinates
+    s = cp.floor(displacement.min(axis=(0, 1, 2))).astype(int)  # min/max is very slow for GPU...
+    s = cp.maximum(0, s)
+    e = cp.ceil(displacement.max(axis=(0, 1, 2))).astype(int) + 1
+    e = cp.maximum(0, e)
+    coord = cp.moveaxis(displacement - s, -1, 0)
+    s = s.get()
+    e = e.get()
+    slc = tuple(slice(x, y) for x, y in zip(s, e))
+    size = np.prod(e - s)
+
+    if size < size_limit:
+        # slice data and move to cupy
+        mov_block = cp.array(mov[slc])
+        # interpolate block (adjust transform to local origin)
+        mov_block = (ndimage.map_coordinates(mov_block, coord, order=order, mode='constant')).get()
+
+        # del mov_block_cp
+        del displacement
+        del coord
+        cp._default_memory_pool.free_all_blocks()
+
+        return mov_block
+    else:
+        mov_block = np.zeros(displacement.shape[:-1], dtype=mov.dtype)
+        del displacement
+        del coord
+        cp._default_memory_pool.free_all_blocks()
+
+        return mov_block
+
+
 def upscale_displacement_overlap(positional_displacement, rescale_constant, out_chunk_size=(512, 512, 512), out_overlap=(64,64,64)):
     """
     positional_displacement: ndarray
@@ -246,46 +287,6 @@ def upscale_displacement_gpu(positional_displacement, rescale_constant, out_chun
 
     return displacement_rescale
 
-
-def transform_block_gpu(displacement, mov, order=1, size_limit=1024*1024*1024):
-    """
-    displacement: ndarray
-    mov: ndarray
-    """
-    if not isinstance(displacement, np.ndarray):
-        displacement = np.asarray(displacement)
-
-    displacement = cp.array(displacement)
-    # get moving data block coordinates
-    s = cp.floor(displacement.min(axis=(0, 1, 2))).astype(int)  # min/max is very slow for GPU...
-    s = cp.maximum(0, s)
-    e = cp.ceil(displacement.max(axis=(0, 1, 2))).astype(int) + 1
-    e = cp.maximum(0, e)
-    coord = cp.moveaxis(displacement - s, -1, 0)
-    s = s.get()
-    e = e.get()
-    slc = tuple(slice(x, y) for x, y in zip(s, e))
-    size = np.prod(e - s)
-
-    if size < size_limit:
-        # slice data and move to cupy
-        mov_block = cp.array(mov[slc])
-        # interpolate block (adjust transform to local origin)
-        mov_block = (ndimage.map_coordinates(mov_block, coord, order=order, mode='constant')).get()
-
-        # del mov_block_cp
-        del displacement
-        del coord
-        cp._default_memory_pool.free_all_blocks()
-
-        return mov_block
-    else:
-        mov_block = np.zeros(displacement.shape[:-1], dtype=mov.dtype)
-        del displacement
-        del coord
-        cp._default_memory_pool.free_all_blocks()
-
-        return mov_block
 
 
 def relative2positional_gpu(relative_displacement):
