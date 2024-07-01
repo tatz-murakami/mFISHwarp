@@ -83,3 +83,18 @@ def obtain_chunk_slicer(chunks, chunk_position):
         accum_sum = int(np.asarray(chunks[i][:k]).sum())
         slicer_list.append(slice(accum_sum,accum_sum+chunks[i][k],None))
     return tuple(slicer_list)
+
+
+def get_dask_index(image):
+    index = list(np.ndindex(*image.numblocks))
+
+    return index
+
+
+def slicing_with_chunkidx(da_array, index):
+    chunk_info = da_array.chunks
+    p = slice(sum(chunk_info[0][:index[0]]),sum(chunk_info[0][:index[0]])+chunk_info[0][index[0]]) 
+    q = slice(sum(chunk_info[1][:index[1]]),sum(chunk_info[1][:index[1]])+chunk_info[1][index[1]])
+    r = slice(sum(chunk_info[2][:index[2]]),sum(chunk_info[2][:index[2]])+chunk_info[2][index[2]])
+    
+    return da_array[p, q, r]
