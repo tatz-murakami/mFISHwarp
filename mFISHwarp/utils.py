@@ -1,5 +1,7 @@
 import dask.array as da
 import numpy as np
+import functools
+import operator
 
 
 def chunks_from_dask(array):
@@ -98,3 +100,21 @@ def slicing_with_chunkidx(da_array, index):
     r = slice(sum(chunk_info[2][:index[2]]),sum(chunk_info[2][:index[2]])+chunk_info[2][index[2]])
     
     return da_array[p, q, r]
+
+
+def normalization_two_values(arr, lower, upper):
+    """
+    Normalize array so that the lower values to be 0 and upper values to be 1.
+    """
+    return (arr - lower) / (upper - lower)
+
+
+def get_block_iter(image):
+    block_iter = zip(
+        np.ndindex(*image.numblocks),
+        map(
+            functools.partial(operator.getitem, image),
+            da.core.slices_from_chunks(image.chunks),
+        ),
+    )
+    return block_iter
