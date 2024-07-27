@@ -7,40 +7,69 @@ import mFISHwarp.transform
 import mFISHwarp.utils
 
 
-def affine_registration(array1, array2, initial_rotation=None, shrinking_factors=(16, 8, 4, 2), smoothing = (4, 2, 1, 0)):
+def affine_registration(array1, array2, initial_rotation=None, initial_scaling=None, shrinking_factors=(16, 8, 4, 2), smoothing = (4, 2, 1, 0), steplength=0.1, num_iter=25, model='affine'):
     """
     Arguments:
         array1 (ndarray): fixed image
         array2 (ndarray): moving image
         initial_rotation: initial rotation degree in x, y, z.
             if you want to rotate around z for pi, (0,1,np.pi). In case of y, (0,2,np.pi). help(initial_transform.Rotate())
+        initial_scaling (float): initial scaling in x,y,z.
     Return:
         affine transformation (itk.AffineTransform):
     """
+    if model != 'affine' and model != 'rigid' and model != 'similarity':
+        raise ValueError("Model has to be either affine, rigid or similarity.") 
 
     fix_itk = sitk.Cast(sitk.GetImageFromArray(array1), sitk.sitkFloat32)
     mov_itk = sitk.Cast(sitk.GetImageFromArray(array2), sitk.sitkFloat32)
-
-    initial_transform = sitk.AffineTransform(sitk.CenteredTransformInitializer(fix_itk,
-                                                                               mov_itk,
-                                                                               sitk.AffineTransform(3),
-                                                                               sitk.CenteredTransformInitializerFilter.GEOMETRY))
+    
+    if model=='affine':
+        initial_transform = sitk.AffineTransform(fix_itk.GetDimension())
+        if initial_scaling is not None:
+            scaling_matrix = np.diag(initial_scaling)
+            initial_transform.SetMatrix(scaling_matrix.flatten())
+        initial_transform = sitk.AffineTransform(sitk.CenteredTransformInitializer(fix_itk,
+                                                                                   mov_itk,
+                                                                                   initial_transform,
+                                                                                   sitk.CenteredTransformInitializerFilter.GEOMETRY))
+        
+    elif model == 'rigid':
+        initial_transform = sitk.Euler3DTransform(sitk.CenteredTransformInitializer(fix_itk,
+                                                                                   mov_itk,
+                                                                                   sitk.Euler3DTransform(),
+                                                                                   sitk.CenteredTransformInitializerFilter.GEOMETRY))
+    elif model == 'similarity':
+        initial_transform = sitk.Similarity3DTransform()
+        if initial_scaling is not None:
+            scaling_matrix = np.diag(initial_scaling)
+            initial_transform.SetMatrix(scaling_matrix.flatten())
+        initial_transform = sitk.Similarity3DTransform(sitk.CenteredTransformInitializer(fix_itk,
+                                                                                   mov_itk,
+                                                                                   initial_transform,
+                                                                                   sitk.CenteredTransformInitializerFilter.GEOMETRY))
+        
     if initial_rotation is not None:
         initial_transform.Rotate(*initial_rotation)
 
     registration_method = sitk.ImageRegistrationMethod()
     registration_method.SetMetricAsCorrelation()
     registration_method.SetInterpolator(sitk.sitkLinear)
-    registration_method.SetOptimizerAsPowell(stepLength=0.1, numberOfIterations=25)
+    registration_method.SetOptimizerAsPowell(stepLength=steplength, numberOfIterations=num_iter)
     registration_method.SetOptimizerScalesFromPhysicalShift()
     registration_method.SetInitialTransform(initial_transform)
     registration_method.SetShrinkFactorsPerLevel(shrinkFactors=shrinking_factors)
     registration_method.SetSmoothingSigmasPerLevel(smoothingSigmas=smoothing)
     registration_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
-    affine_transform = registration_method.Execute(fix_itk, mov_itk)
-    affine_transform = sitk.AffineTransform(affine_transform)
+    final_transform = registration_method.Execute(fix_itk, mov_itk)
+    if model=='affine':
+        final_transform = sitk.AffineTransform(final_transform)
+    elif model =='rigid':
+        final_transform = sitk.Euler3DTransform(final_transform)
+    elif model =='similarity':
+        final_transform = sitk.Similarity3DTransform(final_transform)
 
-    return affine_transform
+    return final_transform
 
 
 def affine_warping(array1, array2, affine):

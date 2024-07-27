@@ -6,6 +6,7 @@ import numpy as np
 # to enable three dimensional scaler, I have to define my own class by inheriting the Scaler class
 # https://github.com/ome/ome-zarr-py/blob/8fe43f2530282be557a318c8b2cc27d905ed62c3/ome_zarr/scale.py
 from typing import Any, Tuple, Union
+import mFISHwarp.utils
 
 ArrayLike = Union[da.Array, np.ndarray]
 
@@ -84,4 +85,35 @@ def pyramid_generator_from_dask(arr, downscale_factor=(1, 2, 2, 2), pyramid_leve
         pyramid_arr.append(da.rechunk(downscale_nearest(arr, factors), chunk))
 
     return pyramid_arr
+
+
+def pyramid_from_dask_to_zarr(arr, zarr_root, downscale_factor=(1, 2, 2, 2), resolution_start=1, pyramid_level=5, chunk=(1, 256, 256, 256)):
+    """
+    Nearest neighbor downsampling to make pyramid format.
+    arr (da.ndarray): full resolution image
+    downscale_factor (tuple or list): the size of the downscale_factor should be same as the dimension of arr.
+    it will be converted to int if it is not.
+    resolution_start (int): which resolution to start saving in zarr. (2**resolution_start) * downscale_factor
+    pyramid_level (int): which resolution to stop saving in zarr. 
+    """
+    if arr.ndim != len(downscale_factor):
+        raise ValueError("The size of downscale_factor should match with the dimension of arr")
+    downscale_factor = tuple(int(i) for i in downscale_factor)
+
+    if arr.ndim != len(chunk):
+        raise ValueError("The size of chunk should match with the dimension of arr")
+        
+    initial_downscale_factor = tuple(i ** resolution_start for i in downscale_factor)
+    down_arr = da.rechunk(downscale_nearest(arr, initial_downscale_factor), chunk)
+    p = zarr_root.create_dataset(str(resolution_start),shape=down_arr.shape,chunks=chunk,dtype=down_arr.dtype)
+    down_arr.to_zarr(p,dimension_separator='/')
+    arr = da.from_zarr(zarr_root[str(resolution_start)])
+    
+    for resolution in range(resolution_start+1, pyramid_level):
+        down_arr = da.rechunk(downscale_nearest(arr, downscale_factor), chunk)
+        p = zarr_root.create_dataset(str(resolution),shape=down_arr.shape,chunks=chunk,dtype=down_arr.dtype)
+        down_arr.to_zarr(p,dimension_separator='/')
+        arr = da.from_zarr(zarr_root[str(resolution)])
+
+    return None
 
