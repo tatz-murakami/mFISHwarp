@@ -142,25 +142,25 @@ def convert_disp2array(displacement):
     return sitk.GetArrayFromImage(displacement)
 
 
-def chunk_wise_registration(chunk_position, displacement_overlap, fix_overlap, mov_l, settings, displacement_zarr,
+def chunk_wise_registration(chunk_position, displacement_da fix_da, mov_zarr, settings, displacement_zarr,
                             registered_mov_zarr, num_threads=1, use_gpu=True):
     """
     Arugments:
         chunk_position (tuple): the index of chunk
-        displacement_overlap (dask array): overlapped displacement array
-        fix_overlap (dask array): overlapped fixed array
-        mov_l (zarr): zarr of moving image
+        displacement_da (dask array): positional displacement array.
+        fix_da (dask array): fixed array
+        mov_zarr (zarr): zarr of moving image
         displacment_zarr (zarr): zarr to save displacement image
         regstered_mov_zarr (zarr): zarr to save registered moving image
     """
 
-    chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_overlap)[:-1]
-    fix = fix_overlap[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
+    chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_da)[:-1]
+    fix = fix_da[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
     target_shape = fix.shape
-    disp = displacement_overlap[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
+    disp = displacement_da[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
     disp = mFISHwarp.transform.pad_trim_array_to_size(disp, target_shape+(len(target_shape),), mode='edge')
 
-    mov = mFISHwarp.transform.transform_block_gpu(disp, mov_l)
+    mov = mFISHwarp.transform.transform_block_gpu(disp, mov_zarr)
 
     df_sitk, mov_deformed_overlap = mFISHwarp.register.deform_registration(fix, mov, settings, None, None,
                                                                         num_threads=num_threads, use_gpu=use_gpu,
@@ -190,19 +190,20 @@ def chunk_wise_registration(chunk_position, displacement_overlap, fix_overlap, m
         displacement_zarr[slicing] = merged_displacement
 
 
-def chunk_wise_no_registration(chunk_position, displacement_overlap, fix_overlap, displacement_zarr, registered_mov_zarr):
+def chunk_wise_no_registration(chunk_position, displacement_da, fix_da, displacement_zarr, registered_mov_zarr):
     """
     Arugments:
         chunk_position (tuple): the index of chunk
-        displacement_overlap (dask array): overlapped displacement array
-        displacment_zarr (zarr): zarr to save displacement image
+        displacement_da (dask array): positional displacement array.
+        fix_da (dask array): fixed array
+        displacement_zarr (zarr): zarr to save displacement image
         regstered_mov_zarr (zarr): zarr to save registered moving image
     """
 
-    chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_overlap)[:-1]
-    target_shape = fix_overlap[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].shape
+    chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_da)[:-1]
+    target_shape = fix_da[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].shape
 
-    disp = displacement_overlap[
+    disp = displacement_da[
         mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)
     ].compute()
     
