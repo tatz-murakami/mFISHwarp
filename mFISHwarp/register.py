@@ -210,7 +210,7 @@ def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_d
     disp = displacement_da[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
     disp = mFISHwarp.transform.pad_trim_array_to_size(disp, target_shape+(len(target_shape),), mode='edge')
 
-    mov = mFISHwarp.transform.transform_block_gpu(disp, mov_zarr)
+    mov = mFISHwarp.transform.transform_block(disp, mov_zarr)
     
     # affine registration
     affine_transform = mFISHwarp.register.affine_registration(
