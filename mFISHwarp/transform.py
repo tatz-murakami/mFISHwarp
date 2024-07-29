@@ -328,6 +328,18 @@ def composite_displacement_gpu(disp1, disp2, order=1):
     return merged_disp
 
 
+def composite_displacement(disp1, disp2, order=1):
+    """
+    disp1,2: ndarray in same shape. (z,y,x,dispvector)
+    """
+    disp2 = np.moveaxis(disp2, -1, 0)
+    merged_disp = np.empty_like(disp1)
+    for i in range(disp1.shape[-1]):
+        merged_disp[..., i] = map_coordinates(disp1[..., i], disp2, order=order, mode='constant')
+
+    return merged_disp
+
+
 def trim_array_to_size(arr, size):
     """
     This function only trim and does not pad.

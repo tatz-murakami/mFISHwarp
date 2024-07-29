@@ -193,7 +193,7 @@ def chunk_wise_registration(chunk_position, displacement_da, fix_da, mov_zarr, s
         
         
 def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_da, mov_zarr, settings, displacement_zarr,
-                            registered_mov_zarr, *args, shrinking_factors=(32, 16, 8, 4), smoothing=(4, 4, 2, 1), num_threads=1, use_gpu=True, **kwargs):
+                            registered_mov_zarr, *args, only_affine=False, shrinking_factors=(32, 16, 8, 4), smoothing=(4, 4, 2, 1), num_threads=1, use_gpu=True, **kwargs):
     """
     Arugments:
         chunk_position (tuple): the index of chunk
@@ -221,11 +221,27 @@ def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_d
         smoothing=smoothing,
         model='affine'
     )
-    
-    # non-linear registration
-    df_sitk, mov_deformed_overlap = mFISHwarp.register.deform_registration(fix, mov, settings, affine_transform, None,
+    if only_affine:
+        # apply transformation
+        mov_transformed_overlap = affine_warping(fix, mov, affine_transform)
+        
+        # make displacement field
+        size = fix.shape[::-1]
+        spacing = [1.0, 1.0, 1.0]
+        origin = [0.0, 0.0, 0.0]
+        direction = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+
+        # Convert the affine transform to a displacement field
+        displacement_field = sitk.TransformToDisplacementField(affine_transform, sitk.sitkVectorFloat32, size, origin, spacing, direction)
+        # convert the relative displacement array to scaled positional displacement array
+        positional_df = mFISHwarp.transform.relative2positional(mFISHwarp.transform.displacement_itk2numpy(displacement_field))
+    else:
+        # non-linear registration
+        df_sitk, mov_transformed_overlap = mFISHwarp.register.deform_registration(fix, mov, settings, affine_transform, None,
                                                                         num_threads=num_threads, use_gpu=use_gpu,
                                                                         return_warped=True)
+        # convert relative displacement to positional displacement
+        positional_df = mFISHwarp.transform.relative2positional(mFISHwarp.transform.displacement_itk2numpy(df_sitk))
 
     # save deformed moving image
     if registered_mov_zarr is not None:
@@ -233,17 +249,15 @@ def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_d
         # this should work without overlap.
         chunks = da.from_zarr(registered_mov_zarr).chunks
         shape = [i[j] for i, j in zip(chunks, chunk_position)]
-        crop = (np.asarray(mov_deformed_overlap.shape) - np.asarray(shape)) // 2 
+        crop = (np.asarray(mov_transformed_overlap.shape) - np.asarray(shape)) // 2 
         slicing1 = tuple(slice(i, i + j) for i, j in zip(crop, shape))
-        mov_deformed = mov_deformed_overlap[slicing1].astype(np.uint16)
+        mov_deformed = mov_transformed_overlap[slicing1].astype(np.uint16)
         
         slicing2 = mFISHwarp.utils.obtain_chunk_slicer(chunks, chunk_position)
         registered_mov_zarr[slicing2] = mov_deformed
-
-    # convert relative displacement to positional displacement
-    positional_df = mFISHwarp.transform.relative2positional_gpu(mFISHwarp.transform.displacement_itk2numpy(df_sitk))
+    
     # composite two displacement field
-    merged_displacement = mFISHwarp.transform.composite_displacement_gpu(disp, positional_df, order=1)
+    merged_displacement = mFISHwarp.transform.composite_displacement(disp, positional_df, order=1)
 
     # save dispalcement to zarr
     if displacement_zarr is not None:
