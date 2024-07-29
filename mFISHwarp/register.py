@@ -247,7 +247,11 @@ def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_d
     if registered_mov_zarr is not None:
         # following assumes overlapped input of displacement_da nad fix_da.
         # this should work without overlap.
-        chunks = da.from_zarr(registered_mov_zarr).chunks
+        c = mFISHwarp.utils.chunks_from_dask(fix_overlap)
+        original_chunk_size = [j-i*2 for i, j in zip (displacement_zarr.attrs["overlap_size"],c)]
+        chunks = da.from_zarr(registered_mov_zarr,chunks=original_chunk_size).chunks
+
+        # chunks = da.from_zarr(registered_mov_zarr).chunks
         shape = [i[j] for i, j in zip(chunks, chunk_position)]
         crop = (np.asarray(mov_transformed_overlap.shape) - np.asarray(shape)) // 2 
         slicing1 = tuple(slice(i, i + j) for i, j in zip(crop, shape))
@@ -261,7 +265,7 @@ def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_d
 
     # save dispalcement to zarr
     if displacement_zarr is not None:
-        chunks = da.from_zarr(displacement_zarr).chunks
+        chunks = da.from_zarr(displacement_zarr, chunks=displacement_zarr.attrs["overlap_chunk_size"]).chunks
         slicing = mFISHwarp.utils.obtain_chunk_slicer(chunks,chunk_position) + (slice(None, None, None),)
         displacement_zarr[slicing] = merged_displacement
 
