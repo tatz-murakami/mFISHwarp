@@ -142,13 +142,13 @@ def convert_disp2array(displacement):
     return sitk.GetArrayFromImage(displacement)
 
 
-def chunk_wise_registration(chunk_position, displacement_da fix_da, mov_zarr, settings, displacement_zarr,
+def chunk_wise_registration(chunk_position, displacement_da, fix_da, mov_zarr, settings, displacement_zarr,
                             registered_mov_zarr, num_threads=1, use_gpu=True):
     """
     Arugments:
         chunk_position (tuple): the index of chunk
-        displacement_da (dask array): positional displacement array.
-        fix_da (dask array): fixed array
+        displacement_da (dask array): positional displacement array. usually it is overlapped dask array.
+        fix_da (dask array): fixed array. usually it is overlapped dask array.
         mov_zarr (zarr): zarr of moving image
         displacment_zarr (zarr): zarr to save displacement image
         regstered_mov_zarr (zarr): zarr to save registered moving image
@@ -162,13 +162,75 @@ def chunk_wise_registration(chunk_position, displacement_da fix_da, mov_zarr, se
 
     mov = mFISHwarp.transform.transform_block_gpu(disp, mov_zarr)
 
+    # non-linear registration
     df_sitk, mov_deformed_overlap = mFISHwarp.register.deform_registration(fix, mov, settings, None, None,
                                                                         num_threads=num_threads, use_gpu=use_gpu,
                                                                         return_warped=True)
 
     # save deformed moving image
     if registered_mov_zarr is not None:
-        # shape = registered_mov_zarr.chunks
+        # following assumes overlapped input of displacement_da nad fix_da.
+        # this should work without overlap.
+        chunks = da.from_zarr(registered_mov_zarr).chunks
+        shape = [i[j] for i, j in zip(chunks, chunk_position)]
+        crop = (np.asarray(mov_deformed_overlap.shape) - np.asarray(shape)) // 2 
+        slicing1 = tuple(slice(i, i + j) for i, j in zip(crop, shape))
+        mov_deformed = mov_deformed_overlap[slicing1].astype(np.uint16)
+        
+        slicing2 = mFISHwarp.utils.obtain_chunk_slicer(chunks, chunk_position)
+        registered_mov_zarr[slicing2] = mov_deformed
+
+    # convert relative displacement to positional displacement
+    positional_df = mFISHwarp.transform.relative2positional_gpu(mFISHwarp.transform.displacement_itk2numpy(df_sitk))
+    # composite two displacement field
+    merged_displacement = mFISHwarp.transform.composite_displacement_gpu(disp, positional_df, order=1)
+
+    # save dispalcement to zarr
+    if displacement_zarr is not None:
+        chunks = da.from_zarr(displacement_zarr).chunks
+        slicing = mFISHwarp.utils.obtain_chunk_slicer(chunks,chunk_position) + (slice(None, None, None),)
+        displacement_zarr[slicing] = merged_displacement
+        
+        
+def chunk_wise_affine_deform_registration(chunk_position, displacement_da, fix_da, mov_zarr, settings, displacement_zarr,
+                            registered_mov_zarr, *args, shrinking_factors=(32, 16, 8, 4), smoothing=(4, 4, 2, 1), num_threads=1, use_gpu=True, **kwargs):
+    """
+    Arugments:
+        chunk_position (tuple): the index of chunk
+        displacement_da (dask array): positional displacement array. usually it is overlapped dask array.
+        fix_da (dask array): fixed array. usually it is overlapped dask array.
+        mov_zarr (zarr): zarr of moving image
+        displacment_zarr (zarr): zarr to save displacement image
+        regstered_mov_zarr (zarr): zarr to save registered moving image
+    """
+
+    chunk_size = mFISHwarp.utils.chunks_from_dask(displacement_da)[:-1]
+    fix = fix_da[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
+    target_shape = fix.shape
+    disp = displacement_da[mFISHwarp.utils.chunk_slicer(chunk_position, chunk_size)].compute()
+    disp = mFISHwarp.transform.pad_trim_array_to_size(disp, target_shape+(len(target_shape),), mode='edge')
+
+    mov = mFISHwarp.transform.transform_block_gpu(disp, mov_zarr)
+    
+    # affine registration
+    affine_transform = mFISHwarp.register.affine_registration(
+        fix, mov,
+        initial_rotation=None,
+        initial_scaling=None,
+        shrinking_factors=shrinking_factors, # shrinking factor determine the resolution of the registration.
+        smoothing=smoothing,
+        model='affine'
+    )
+    
+    # non-linear registration
+    df_sitk, mov_deformed_overlap = mFISHwarp.register.deform_registration(fix, mov, settings, affine_transform, None,
+                                                                        num_threads=num_threads, use_gpu=use_gpu,
+                                                                        return_warped=True)
+
+    # save deformed moving image
+    if registered_mov_zarr is not None:
+        # following assumes overlapped input of displacement_da nad fix_da.
+        # this should work without overlap.
         chunks = da.from_zarr(registered_mov_zarr).chunks
         shape = [i[j] for i, j in zip(chunks, chunk_position)]
         crop = (np.asarray(mov_deformed_overlap.shape) - np.asarray(shape)) // 2 
