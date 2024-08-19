@@ -7,6 +7,10 @@ import numpy as np
 # https://github.com/ome/ome-zarr-py/blob/8fe43f2530282be557a318c8b2cc27d905ed62c3/ome_zarr/scale.py
 from typing import Any, Tuple, Union
 import mFISHwarp.utils
+from ome_zarr.io import parse_url
+from ome_zarr.reader import Reader
+import os
+import zarr
 
 ArrayLike = Union[da.Array, np.ndarray]
 
@@ -117,3 +121,35 @@ def pyramid_from_dask_to_zarr(arr, zarr_root, downscale_factor=(1, 2, 2, 2), res
 
     return None
 
+
+def omezarr_bdn5_to_dask(data_path, resolution=0):
+    """
+    """
+    _, ext = os.path.splitext(data_path)
+    imgs = []
+    if ext == '.n5': # n5 assume bigstitcher (bigdataviewer) format
+        # create Zarr file object
+        # load images according to the input parameters.
+        img_zarr = zarr.open(store=zarr.N5Store(data_path), mode='r')
+        n5_setups = list(img_zarr.keys())
+        res_list = list(img_zarr[n5_setups[0]]['timepoint0'].keys())
+
+        for n5_setup in n5_setups:
+            imgs.append(da.from_zarr(img_zarr[n5_setup]['timepoint0'][res_list[resolution]]))
+        imgs = da.stack(imgs)
+
+
+    elif ext == '.zarr': # zarr assumes ome-zarr
+        # read the image data
+        store = parse_url(data_path, mode="r").store
+        reader = Reader(parse_url(data_path))
+        # nodes may include images, labels etc
+        nodes = list(reader())
+        # first node will be the image pixel data
+        image_node = nodes[0]
+
+        dask_data = image_node.data
+        imgs = dask_data[resolution]
+
+
+    return imgs
