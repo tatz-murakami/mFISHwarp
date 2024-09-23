@@ -109,13 +109,13 @@ def pyramid_from_dask_to_zarr(arr, zarr_root, downscale_factor=(1, 2, 2, 2), res
         
     initial_downscale_factor = tuple(i ** resolution_start for i in downscale_factor)
     down_arr = da.rechunk(downscale_nearest(arr, initial_downscale_factor), chunk)
-    p = zarr_root.create_dataset(str(resolution_start),shape=down_arr.shape,chunks=chunk,dtype=down_arr.dtype)
+    p = zarr_root.create_dataset(str(resolution_start),shape=down_arr.shape,chunks=chunk,dtype=down_arr.dtype,dimension_separator='/')
     down_arr.to_zarr(p,dimension_separator='/')
     arr = da.from_zarr(zarr_root[str(resolution_start)])
     
     for resolution in range(resolution_start+1, pyramid_level):
         down_arr = da.rechunk(downscale_nearest(arr, downscale_factor), chunk)
-        p = zarr_root.create_dataset(str(resolution),shape=down_arr.shape,chunks=chunk,dtype=down_arr.dtype)
+        p = zarr_root.create_dataset(str(resolution),shape=down_arr.shape,chunks=chunk,dtype=down_arr.dtype,dimension_separator='/')
         down_arr.to_zarr(p,dimension_separator='/')
         arr = da.from_zarr(zarr_root[str(resolution)])
 
