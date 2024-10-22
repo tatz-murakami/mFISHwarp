@@ -5,7 +5,7 @@ from scipy.ndimage import map_coordinates
 import dask.array as da
 import cupy as cp
 from cupyx.scipy import ndimage
-import cucim.skimage.transform
+# import cucim.skimage.transform
 
 
 def position_grid(shape,position=None):

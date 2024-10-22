@@ -109,6 +109,13 @@ def normalization_two_values(arr, lower, upper):
     return (arr - lower) / (upper - lower)
 
 
+def normalization_two_percentiles(arr, lower_percentile, upper_percentile):
+    """
+    Normalize array so that the lower values to be 0 and upper values to be 1.
+    """
+    return normalization_two_values(arr, np.percentile(arr,lower_percentile), np.percentile(arr,upper_percentile))
+
+
 def get_block_iter(image):
     block_iter = zip(
         np.ndindex(*image.numblocks),
