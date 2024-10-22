@@ -102,18 +102,26 @@ def slicing_with_chunkidx(da_array, index):
     return da_array[p, q, r]
 
 
-def normalization_two_values(arr, lower, upper):
+def normalization_two_values(arr, lower, upper, flip=True, pseudo_value=1):
     """
     Normalize array so that the lower values to be 0 and upper values to be 1.
     """
+    if flip:
+        if lower > upper:
+            temp = upper
+            upper = lower
+            lower = temp
+        elif lower == upper:
+            upper = upper + pseudo_value
+            
     return (arr - lower) / (upper - lower)
 
 
-def normalization_two_percentiles(arr, lower_percentile, upper_percentile):
+def normalization_two_percentiles(arr, lower_percentile, upper_percentile,*args,**kwargs):
     """
     Normalize array so that the lower values to be 0 and upper values to be 1.
     """
-    return normalization_two_values(arr, np.percentile(arr,lower_percentile), np.percentile(arr,upper_percentile))
+    return normalization_two_values(arr, np.percentile(arr,lower_percentile), np.percentile(arr,upper_percentile),*args,**kwargs)
 
 
 def get_block_iter(image):
